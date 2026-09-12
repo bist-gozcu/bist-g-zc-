@@ -8,6 +8,7 @@ import {
   IconStar,
   IconSearch,
   IconTrendingUp,
+  IconGamepad,
 } from "@/components/TabIcon";
 
 
@@ -77,6 +78,14 @@ export default function TabLayout() {
           title: "TREND",
           tabBarLabel: "TREND",
           tabBarIcon: ({ color }) => <IconTrendingUp color={color} size={22} />,
+        }}
+      />
+      <Tabs.Screen
+        name="demo"
+        options={{
+          title: "Demo",
+          tabBarLabel: "Demo",
+          tabBarIcon: ({ color }) => <IconGamepad color={color} size={22} />,
         }}
       />
       <Tabs.Screen

@@ -95,7 +95,7 @@ export function FavoritesProvider({ children }: { children: React.ReactNode }) {
   const addFavorite = useCallback((symbol: string) => {
     const normalizedSymbol = symbol.trim().toUpperCase();
     if (!isSupportedSymbol(normalizedSymbol) || favoritesRef.current.includes(normalizedSymbol)) return;
-    persist([...favoritesRef.current, normalizedSymbol]);
+    persist([normalizedSymbol, ...favoritesRef.current]);
   }, [persist]);
 
   const removeFavorite = useCallback((symbol: string) => {

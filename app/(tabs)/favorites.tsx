@@ -179,7 +179,7 @@ export default function FavoritesScreen() {
                 tintColor={colors.primary}
               />
             }
-            contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
+            contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
             showsVerticalScrollIndicator={false}
           />
         )}

@@ -33,7 +33,6 @@ export default function TreydScreen() {
   const [hasScanned, setHasScanned] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [showDemoInfo, setShowDemoInfo] = useState(false);
   const marketOpen = isPiyasaAcik();
   /* results is already sorted by genelPuan desc from getTop6TreydWithConfirmation */
 
@@ -196,26 +195,8 @@ export default function TreydScreen() {
           <Text style={[styles.title, { color: colors.foreground }]}>
             TREND
           </Text>
-          <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-            BIST 30/50 içinde genel puana göre sıralı trend taraması
-          </Text>
         </View>
         <View style={styles.headerActions}>
-          <Pressable
-            onPress={() => router.push("/demo" as never)}
-            style={({ pressed }) => [
-              styles.demoHeaderButton,
-              {
-                backgroundColor: pressed
-                  ? `${colors.primary}30`
-                  : `${colors.primary}18`,
-              },
-            ]}
-          >
-            <Text style={[styles.demoHeaderText, { color: colors.primary }]}>
-              Demo
-            </Text>
-          </Pressable>
           <Pressable
             onPress={() => {
               void refreshAndScan();
@@ -258,62 +239,6 @@ export default function TreydScreen() {
         <Text style={[styles.sessionText, { color: colors.foreground }]}>
           {sessionLabel}
         </Text>
-      </View>
-
-      <View
-        style={[
-          styles.notice,
-          {
-            backgroundColor: `${colors.neutral}12`,
-            borderColor: `${colors.neutral}30`,
-          },
-        ]}
-      >
-        <View style={styles.noticeHeader}>
-          <Pressable
-            accessibilityLabel="TREND bilgilendirmesini göster"
-            accessibilityRole="button"
-            onPress={() => setShowDemoInfo((visible) => !visible)}
-            style={({ pressed }) => [
-              styles.infoButton,
-              {
-                backgroundColor: pressed
-                  ? `${colors.primary}35`
-                  : `${colors.primary}18`,
-                borderColor: `${colors.primary}55`,
-              },
-            ]}
-          >
-            <Text style={[styles.infoButtonText, { color: colors.primary }]}>!</Text>
-          </Pressable>
-          <Text style={[styles.noticeHint, { color: colors.mutedForeground }]}>
-            Demo ve radar bilgisi
-          </Text>
-          <Pressable
-            onPress={() => router.push("/demo" as never)}
-            style={({ pressed }) => [
-              styles.demoLink,
-              {
-                backgroundColor: pressed
-                  ? `${colors.primary}30`
-                  : `${colors.primary}18`,
-              },
-            ]}
-          >
-            <Text style={[styles.demoLinkText, { color: colors.primary }]}>
-              Demo hesabını aç
-            </Text>
-          </Pressable>
-        </View>
-        {showDemoInfo && (
-          <Text style={[styles.noticeText, { color: colors.mutedForeground }]}>
-            Teyitli adaylar tamamlanmış günlük mumlara dayanır. Erken sinyaller
-            daha erken fakat daha riskli uyarıdır. Çekirge yatay birikim
-            adayıdır; kırılım teyidi gerekir. Sıralama genel puana göredir —
-            üst sıralar daha çok teyitli, alt sıralar daha erken aşamada.
-            Eski veya belirsiz veriyle yeni bildirim üretilmez.
-          </Text>
-        )}
       </View>
 
       <FlatList<TreydSinyali>
@@ -454,14 +379,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   title: { fontSize: 26, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
-  subtitle: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 6 },
-  demoHeaderButton: {
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  demoHeaderText: { fontSize: 12, fontFamily: "Inter_700Bold" },
   refreshButton: { borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 },
   refreshText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
   sessionBanner: {
@@ -476,46 +394,6 @@ const styles = StyleSheet.create({
   },
   sessionDot: { width: 7, height: 7, borderRadius: 4 },
   sessionText: { fontSize: 12, fontFamily: "Inter_500Medium" },
-  notice: {
-    marginHorizontal: 14,
-    marginTop: 8,
-    marginBottom: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  noticeHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  infoButton: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  infoButtonText: {
-    fontSize: 15,
-    fontWeight: "800",
-    lineHeight: 18,
-  },
-  noticeHint: {
-    flex: 1,
-    fontSize: 11,
-  },
-  noticeText: { fontSize: 10, lineHeight: 14, fontFamily: "Inter_400Regular" },
-  demoLink: {
-    alignSelf: "flex-start",
-    marginTop: 8,
-    borderRadius: 7,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-  },
-  demoLinkText: { fontSize: 11, fontFamily: "Inter_700Bold" },
   listContent: { paddingHorizontal: 12, paddingTop: 6 },
   listHeader: {
     flexDirection: "row",

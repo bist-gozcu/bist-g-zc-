@@ -39,7 +39,7 @@ function RootLayoutNav() {
           presentation: "card",
         }}
       />
-      <Stack.Screen name="demo" options={{ headerShown: false }} />
+
     </Stack>
   );
 }
