@@ -74,8 +74,11 @@ function SwipeableFavoriteRow({
         friction={1}
       >
         <Pressable
-          onLongPress={drag}
-          delayLongPress={200}
+          onLongPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            drag();
+          }}
+          delayLongPress={350}
           style={[
             styles.rowWrap,
             isActive && { backgroundColor: accentColor, opacity: 0.85 },
@@ -161,7 +164,7 @@ export default function FavoritesScreen() {
           <DraggableFlatList
             data={favorites}
             keyExtractor={(item) => item}
-            activationDistance={8}
+            activationDistance={10}
             onDragEnd={({ from, to }) => {
               if (from !== to) {
                 Haptics.selectionAsync();
