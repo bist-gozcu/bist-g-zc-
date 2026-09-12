@@ -38,6 +38,7 @@
     "expo-linking": "~8.0.12",
     "expo-router": "~6.0.17",
     "expo-splash-screen": "~31.0.12",
+    "node": "^22.23.2",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",

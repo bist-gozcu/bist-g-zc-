@@ -19,9 +19,12 @@ import { useStocks } from "@/contexts/StockContext";
 import { useFavorites } from "@/contexts/FavoritesContext";
 import StockRow from "@/components/StockRow";
 import EmptyState from "@/components/EmptyState";
-import { IconTrash, IconGrip } from "@/components/TabIcon";
+import { IconTrash } from "@/components/TabIcon";
 
-/* ── swipe-to-delete satır bileşeni ── */
+/* ── silme alanı genişliği (ekranın ~%18'i kadar) ── */
+const DELETE_ACTION_WIDTH = 64;
+
+/* ── swipe-to-delete + sürükle satır bileşeni ── */
 function SwipeableFavoriteRow({
   symbol,
   quote,
@@ -42,7 +45,12 @@ function SwipeableFavoriteRow({
   const swipeRef = useRef<Swipeable>(null);
 
   const renderRightActions = () => (
-    <View style={[styles.swipeContainer, { backgroundColor: purpleColor }]}>
+    <View
+      style={[
+        styles.swipeContainer,
+        { backgroundColor: purpleColor },
+      ]}
+    >
       <Pressable
         onPress={() => {
           swipeRef.current?.close();
@@ -52,7 +60,7 @@ function SwipeableFavoriteRow({
         accessibilityRole="button"
         accessibilityLabel={`${symbol} favorilerden çıkar`}
       >
-        <IconTrash color="#fff" size={18} />
+        <IconTrash color="#fff" size={20} />
       </Pressable>
     </View>
   );
@@ -63,7 +71,7 @@ function SwipeableFavoriteRow({
         ref={swipeRef}
         renderRightActions={renderRightActions}
         overshootRight={false}
-        friction={2}
+        friction={1}
       >
         <Pressable
           onLongPress={drag}
@@ -75,10 +83,6 @@ function SwipeableFavoriteRow({
           accessibilityRole="button"
           accessibilityLabel={`${symbol} sırasını değiştirmek için basılı tut`}
         >
-          {/* Sürükle tutacağı */}
-          <View style={styles.gripBox}>
-            <IconGrip color={accentColor} size={14} />
-          </View>
           <View style={styles.rowFlex}>
             <StockRow symbol={symbol} quote={quote} showFavoriteBtn={true} />
           </View>
@@ -212,22 +216,15 @@ const styles = StyleSheet.create({
   countBadge: { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
   countText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
   rowWrap: { flexDirection: "row", alignItems: "center" },
-  gripBox: {
-    width: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingLeft: 4,
-  },
   rowFlex: { flex: 1 },
   swipeContainer: {
-    flex: 1,
+    width: DELETE_ACTION_WIDTH,
     justifyContent: "center",
-    alignItems: "flex-end",
-    paddingRight: 10,
+    alignItems: "center",
   },
   swipeBtn: {
-    width: 42,
-    height: 42,
+    width: 44,
+    height: 44,
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
