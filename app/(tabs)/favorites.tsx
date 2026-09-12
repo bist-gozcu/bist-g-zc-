@@ -1,16 +1,13 @@
 import React, { useCallback, useRef, useState } from "react";
 import {
+  FlatList,
+  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import DraggableFlatList, {
-  RenderItemParams,
-  ScaleDecorator,
-} from "react-native-draggable-flatlist";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Swipeable } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -19,89 +16,112 @@ import { useStocks } from "@/contexts/StockContext";
 import { useFavorites } from "@/contexts/FavoritesContext";
 import StockRow from "@/components/StockRow";
 import EmptyState from "@/components/EmptyState";
-import { IconTrash } from "@/components/TabIcon";
+import { IconTrash, IconArrowUp, IconArrowDown } from "@/components/TabIcon";
+import { useIsFocused } from "@react-navigation/native";
 
-/* ── silme alanı genişliği (ekranın ~%18'i kadar) ── */
-const DELETE_ACTION_WIDTH = 64;
+/* ── swipe silme alanı genişliği ── */
+const DELETE_ACTION_WIDTH = 76;
 
-/* ── swipe-to-delete + sürükle satır bileşeni ── */
-function SwipeableFavoriteRow({
-  symbol,
-  quote,
-  onRemove,
-  drag,
-  isActive,
-  purpleColor,
-  accentColor,
-}: {
-  symbol: string;
-  quote: any;
-  onRemove: () => void;
-  drag: () => void;
-  isActive: boolean;
-  purpleColor: string;
-  accentColor: string;
-}) {
+/* ── swipe-to-delete + sıralama satır bileşeni ── */
+const FavoriteRow = React.forwardRef(function FavoriteRow(
+  {
+    symbol,
+    quote,
+    onRemove,
+    editMode,
+    onMoveUp,
+    onMoveDown,
+    canMoveUp,
+    canMoveDown,
+    onSwipeOpen,
+    onSwipeClose,
+  }: {
+    symbol: string;
+    quote: any;
+    onRemove: () => void;
+    editMode: boolean;
+    onMoveUp: () => void;
+    onMoveDown: () => void;
+    canMoveUp: boolean;
+    canMoveDown: boolean;
+    onSwipeOpen: () => void;
+    onSwipeClose: () => void;
+  },
+  ref: React.Ref<any>,
+) {
+  const colors = useColors();
   const swipeRef = useRef<Swipeable>(null);
 
+  /* dışarıya close() metodu ver */
+  React.useImperativeHandle(ref, () => ({
+    close: () => swipeRef.current?.close(),
+  }));
+
   const renderRightActions = () => (
-    <View
-      style={[
-        styles.swipeContainer,
-        { backgroundColor: purpleColor },
-      ]}
+    <Pressable
+      style={[styles.swipeDelete, { backgroundColor: colors.purple }]}
+      onPress={() => {
+        swipeRef.current?.close();
+        onRemove();
+      }}
     >
-      <Pressable
-        onPress={() => {
-          swipeRef.current?.close();
-          onRemove();
-        }}
-        style={styles.swipeBtn}
-        accessibilityRole="button"
-        accessibilityLabel={`${symbol} favorilerden çıkar`}
-      >
-        <IconTrash color="#fff" size={20} />
-      </Pressable>
-    </View>
+      <IconTrash color="#fff" size={18} />
+      <Text style={styles.swipeDeleteText}>Sil</Text>
+    </Pressable>
   );
 
   return (
-    <ScaleDecorator>
-      <Swipeable
-        ref={swipeRef}
-        renderRightActions={renderRightActions}
-        overshootRight={false}
-        friction={1}
-      >
-        <Pressable
-          onLongPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            drag();
-          }}
-          delayLongPress={350}
-          style={[
-            styles.rowWrap,
-            isActive && { backgroundColor: accentColor, opacity: 0.85 },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={`${symbol} sırasını değiştirmek için basılı tut`}
-        >
-          <View style={styles.rowFlex}>
-            <StockRow symbol={symbol} quote={quote} showFavoriteBtn={true} />
+    <Swipeable
+      ref={swipeRef}
+      renderRightActions={renderRightActions}
+      overshootRight={false}
+      friction={2}
+      enabled={!editMode}
+      onSwipeableWillOpen={onSwipeOpen}
+      onSwipeableWillClose={onSwipeClose}
+    >
+      <View style={[styles.rowWrap, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        {editMode ? (
+          <View style={styles.reorderBtns}>
+            <Pressable onPress={onMoveUp} disabled={!canMoveUp} hitSlop={6} style={styles.reorderBtn}>
+              <IconArrowUp color={canMoveUp ? colors.mutedForeground : colors.border} size={16} />
+            </Pressable>
+            <Pressable onPress={onMoveDown} disabled={!canMoveDown} hitSlop={6} style={styles.reorderBtn}>
+              <IconArrowDown color={canMoveDown ? colors.mutedForeground : colors.border} size={16} />
+            </Pressable>
           </View>
-        </Pressable>
-      </Swipeable>
-    </ScaleDecorator>
+        ) : null}
+        <View style={styles.rowFlex}>
+          <StockRow symbol={symbol} quote={quote} showFavoriteBtn={true} />
+        </View>
+      </View>
+    </Swipeable>
   );
-}
+});
 
 /* ── ana ekran ── */
 export default function FavoritesScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const { quotes, refresh } = useStocks();
   const { favorites, removeFavorite, reorder } = useFavorites();
   const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+
+  /* ── swipeable ref yönetimi ── */
+  const openSwipeKey = useRef<string | null>(null);
+  const swipeRowRefs = useRef<Map<string, any>>(new Map());
+
+  /* sekme değiştiğinde açık swipe'ı kapat */
+  React.useEffect(() => {
+    if (isFocused) return;
+    if (openSwipeKey.current) {
+      const row = swipeRowRefs.current.get(openSwipeKey.current);
+      row?.close?.();
+      openSwipeKey.current = null;
+    }
+  }, [isFocused]);
 
   const handleManualRefresh = useCallback(async () => {
     setManualRefreshing(true);
@@ -114,23 +134,27 @@ export default function FavoritesScreen() {
 
   const handleRemove = useCallback(
     (symbol: string) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       removeFavorite(symbol);
     },
     [removeFavorite],
   );
 
+  const handleMove = useCallback(
+    (index: number, direction: -1 | 1) => {
+      const to = index + direction;
+      if (to < 0 || to >= favorites.length) return;
+      if (Platform.OS !== "web") Haptics.selectionAsync();
+      reorder(index, to);
+    },
+    [favorites.length, reorder],
+  );
+
   const topPaddingStyle = { paddingTop: insets.top + 10 };
 
   return (
-    <GestureHandlerRootView style={styles.root}>
-      <View
-        style={[
-          styles.container,
-          { backgroundColor: colors.background },
-          topPaddingStyle,
-        ]}
-      >
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      <View style={[topPaddingStyle, { flex: 1 }]}>
         {/* Header */}
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <View style={styles.headerLeft}>
@@ -152,6 +176,25 @@ export default function FavoritesScreen() {
               </View>
             )}
           </View>
+          {favorites.length > 0 && (
+            <Pressable
+              onPress={() => setEditMode((v) => !v)}
+              hitSlop={10}
+              style={[
+                styles.editBtn,
+                { backgroundColor: editMode ? `${colors.primary}20` : colors.secondary },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.editBtnText,
+                  { color: editMode ? colors.primary : colors.mutedForeground },
+                ]}
+              >
+                {editMode ? "Tamam" : "Sırala"}
+              </Text>
+            </Pressable>
+          )}
         </View>
 
         {favorites.length === 0 ? (
@@ -161,27 +204,9 @@ export default function FavoritesScreen() {
             subtitle="Piyasa veya Arama ekranından yıldıza basarak hisse ekleyin"
           />
         ) : (
-          <DraggableFlatList
+          <FlatList
             data={favorites}
             keyExtractor={(item) => item}
-            activationDistance={10}
-            onDragEnd={({ from, to }) => {
-              if (from !== to) {
-                Haptics.selectionAsync();
-                reorder(from, to);
-              }
-            }}
-            renderItem={({ item, drag, isActive }: RenderItemParams<string>) => (
-              <SwipeableFavoriteRow
-                symbol={item}
-                quote={quotes[item]}
-                onRemove={() => handleRemove(item)}
-                drag={drag}
-                isActive={isActive}
-                purpleColor={colors.purple}
-                accentColor={colors.accent}
-              />
-            )}
             refreshControl={
               <RefreshControl
                 refreshing={manualRefreshing}
@@ -189,18 +214,46 @@ export default function FavoritesScreen() {
                 tintColor={colors.primary}
               />
             }
+            renderItem={({ item, index }) => (
+              <FavoriteRow
+                ref={(r) => {
+                  if (r) swipeRowRefs.current.set(item, r);
+                  else swipeRowRefs.current.delete(item);
+                }}
+                symbol={item}
+                quote={quotes[item]}
+                onRemove={() => handleRemove(item)}
+                editMode={editMode}
+                onMoveUp={() => handleMove(index, -1)}
+                onMoveDown={() => handleMove(index, 1)}
+                canMoveUp={index > 0}
+                canMoveDown={index < favorites.length - 1}
+                onSwipeOpen={() => {
+                  /* önce açık olanı kapat */
+                  if (openSwipeKey.current && openSwipeKey.current !== item) {
+                    const prev = swipeRowRefs.current.get(openSwipeKey.current);
+                    prev?.close?.();
+                  }
+                  openSwipeKey.current = item;
+                }}
+                onSwipeClose={() => {
+                  if (openSwipeKey.current === item) {
+                    openSwipeKey.current = null;
+                  }
+                }}
+              />
+            )}
             contentContainerStyle={{ paddingBottom: insets.bottom + 150 }}
             showsVerticalScrollIndicator={false}
           />
         )}
       </View>
-    </GestureHandlerRootView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  container: { flex: 1 },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -218,18 +271,21 @@ const styles = StyleSheet.create({
   },
   countBadge: { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
   countText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
-  rowWrap: { flexDirection: "row", alignItems: "center" },
+  editBtn: { borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  editBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  rowWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
   rowFlex: { flex: 1 },
-  swipeContainer: {
+  reorderBtns: { flexDirection: "column", gap: 6, paddingLeft: 8 },
+  reorderBtn: { padding: 2 },
+  swipeDelete: {
     width: DELETE_ACTION_WIDTH,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  swipeBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
+    gap: 2,
   },
+  swipeDeleteText: { color: "#fff", fontSize: 11, fontFamily: "Inter_600SemiBold" },
 });
