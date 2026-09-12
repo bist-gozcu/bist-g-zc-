@@ -266,6 +266,19 @@ export function IconCollapse({ color, size = 20 }: IconProps) {
   );
 }
 
+export function IconGrip({ color, size = 16 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <Circle cx="4" cy="3" r="1.2" fill={color} />
+      <Circle cx="12" cy="3" r="1.2" fill={color} />
+      <Circle cx="4" cy="8" r="1.2" fill={color} />
+      <Circle cx="12" cy="8" r="1.2" fill={color} />
+      <Circle cx="4" cy="13" r="1.2" fill={color} />
+      <Circle cx="12" cy="13" r="1.2" fill={color} />
+    </Svg>
+  );
+}
+
 export function IconGamepad({ color, size = 22 }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">

@@ -21,6 +21,7 @@ const colors = {
     up: "#34C759",
     down: "#FF3B30",
     neutral: "#FFD60A",
+    purple: "#8B5CF6",
   },
   dark: {
     text: "#FFFFFF",
@@ -44,6 +45,7 @@ const colors = {
     up: "#34C759",
     down: "#FF3B30",
     neutral: "#FFD60A",
+    purple: "#8B5CF6",
   },
   radius: 10,
 };

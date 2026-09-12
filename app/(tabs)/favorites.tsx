@@ -19,7 +19,7 @@ import { useStocks } from "@/contexts/StockContext";
 import { useFavorites } from "@/contexts/FavoritesContext";
 import StockRow from "@/components/StockRow";
 import EmptyState from "@/components/EmptyState";
-import { IconTrash } from "@/components/TabIcon";
+import { IconTrash, IconGrip } from "@/components/TabIcon";
 
 /* ── swipe-to-delete satır bileşeni ── */
 function SwipeableFavoriteRow({
@@ -28,7 +28,7 @@ function SwipeableFavoriteRow({
   onRemove,
   drag,
   isActive,
-  downColor,
+  purpleColor,
   accentColor,
 }: {
   symbol: string;
@@ -36,13 +36,13 @@ function SwipeableFavoriteRow({
   onRemove: () => void;
   drag: () => void;
   isActive: boolean;
-  downColor: string;
+  purpleColor: string;
   accentColor: string;
 }) {
   const swipeRef = useRef<Swipeable>(null);
 
   const renderRightActions = () => (
-    <View style={[styles.swipeContainer, { backgroundColor: downColor }]}>
+    <View style={[styles.swipeContainer, { backgroundColor: purpleColor }]}>
       <Pressable
         onPress={() => {
           swipeRef.current?.close();
@@ -52,8 +52,7 @@ function SwipeableFavoriteRow({
         accessibilityRole="button"
         accessibilityLabel={`${symbol} favorilerden çıkar`}
       >
-        <IconTrash color="#fff" size={22} />
-        <Text style={styles.swipeText}>Sil</Text>
+        <IconTrash color="#fff" size={18} />
       </Pressable>
     </View>
   );
@@ -76,6 +75,10 @@ function SwipeableFavoriteRow({
           accessibilityRole="button"
           accessibilityLabel={`${symbol} sırasını değiştirmek için basılı tut`}
         >
+          {/* Sürükle tutacağı */}
+          <View style={styles.gripBox}>
+            <IconGrip color={accentColor} size={14} />
+          </View>
           <View style={styles.rowFlex}>
             <StockRow symbol={symbol} quote={quote} showFavoriteBtn={true} />
           </View>
@@ -121,7 +124,7 @@ export default function FavoritesScreen() {
           topPaddingStyle,
         ]}
       >
-        {/* Header — düzenle butonu kaldırıldı */}
+        {/* Header */}
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <View style={styles.headerLeft}>
             <Text style={[styles.headerTitle, { color: colors.foreground }]}>
@@ -168,7 +171,7 @@ export default function FavoritesScreen() {
                 onRemove={() => handleRemove(item)}
                 drag={drag}
                 isActive={isActive}
-                downColor={colors.down}
+                purpleColor={colors.purple}
                 accentColor={colors.accent}
               />
             )}
@@ -179,7 +182,7 @@ export default function FavoritesScreen() {
                 tintColor={colors.primary}
               />
             }
-            contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
+            contentContainerStyle={{ paddingBottom: insets.bottom + 150 }}
             showsVerticalScrollIndicator={false}
           />
         )}
@@ -209,24 +212,24 @@ const styles = StyleSheet.create({
   countBadge: { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
   countText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
   rowWrap: { flexDirection: "row", alignItems: "center" },
+  gripBox: {
+    width: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingLeft: 4,
+  },
   rowFlex: { flex: 1 },
   swipeContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "flex-end",
-    paddingRight: 16,
+    paddingRight: 10,
   },
   swipeBtn: {
-    width: 58,
-    height: 58,
-    borderRadius: 14,
+    width: 42,
+    height: 42,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    gap: 2,
-  },
-  swipeText: {
-    color: "#fff",
-    fontSize: 11,
-    fontFamily: "Inter_600SemiBold",
   },
 });
