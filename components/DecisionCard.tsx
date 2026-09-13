@@ -1,6 +1,7 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useColors } from "@/hooks/useColors";
+import { IconEnvelope } from "@/components/TabIcon";
 import type { ErkenHareketEtiketi, PiyasaHavasi } from "@/services/treydMotoru";
 
 interface DecisionCardProps {
@@ -57,6 +58,7 @@ interface DecisionCardProps {
   riskOdulOrani?: number;
   bbBandwidth?: number;
   momentumYonu?: "up" | "down" | "flat";
+  hasUnseenNotification?: boolean;
 }
 
 function SignalChip({
@@ -135,6 +137,7 @@ export default function DecisionCard({
   riskOdulOrani,
   bbBandwidth,
   momentumYonu = "flat",
+  hasUnseenNotification = false,
 }: DecisionCardProps) {
   const colors = useColors();
   const hasProximityBar =
@@ -230,17 +233,24 @@ export default function DecisionCard({
             )}
           </View>
         </View>
-        <View style={styles.scoreBox}>
-          <View
-            style={[styles.durumBadge, { backgroundColor: `${durumColor}18` }]}
-          >
-            <Text style={[styles.durumBadgeText, { color: durumColor }]}>
-              {durumEtiketi}
+        <View style={styles.scoreArea}>
+          {hasUnseenNotification && (
+            <View style={styles.envelopeBadge}>
+              <IconEnvelope size={16} color="#FF8C00" />
+            </View>
+          )}
+          <View style={styles.scoreBox}>
+            <View
+              style={[styles.durumBadge, { backgroundColor: `${durumColor}18` }]}
+            >
+              <Text style={[styles.durumBadgeText, { color: durumColor }]}>
+                {durumEtiketi}
+              </Text>
+            </View>
+            <Text style={[styles.genelPuanText, { color: colors.foreground }]}>
+              {genelPuan}/100
             </Text>
           </View>
-          <Text style={[styles.genelPuanText, { color: colors.foreground }]}>
-            {genelPuan}/100
-          </Text>
         </View>
       </View>
 
@@ -439,7 +449,9 @@ const styles = StyleSheet.create({
   },
   price: { fontSize: 12, fontFamily: "Inter_400Regular" },
   dailyChange: { fontSize: 12, fontFamily: "Inter_700Bold" },
-  scoreBox: { alignItems: "flex-end", marginLeft: 8 },
+  scoreArea: { alignItems: "flex-end", marginLeft: 8 },
+  envelopeBadge: { marginBottom: 4 },
+  scoreBox: { alignItems: "flex-end" },
   durumBadge: {
     borderRadius: 6,
     paddingHorizontal: 7,

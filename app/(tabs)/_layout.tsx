@@ -112,6 +112,7 @@ export default function TabLayout() {
           title: "Ara",
           tabBarLabel: "Ara",
           tabBarIcon: ({ color }) => <IconSearch color={color} size={22} />,
+          href: null,
         }}
       />
     </Tabs>

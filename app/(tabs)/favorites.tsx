@@ -1,6 +1,5 @@
 import React, { useCallback, useRef, useState } from "react";
 import {
-  FlatList,
   Platform,
   Pressable,
   RefreshControl,
@@ -16,8 +15,17 @@ import { useStocks } from "@/contexts/StockContext";
 import { useFavorites } from "@/contexts/FavoritesContext";
 import StockRow from "@/components/StockRow";
 import EmptyState from "@/components/EmptyState";
-import { IconTrash, IconArrowUp, IconArrowDown } from "@/components/TabIcon";
+import {
+  IconTrash,
+  IconArrowUp,
+  IconArrowDown,
+  IconGrip,
+} from "@/components/TabIcon";
 import { useIsFocused } from "@react-navigation/native";
+import DraggableFlatList, {
+  RenderItemParams,
+  ScaleDecorator,
+} from "react-native-draggable-flatlist";
 
 /* ── swipe silme alanı genişliği ── */
 const DELETE_ACTION_WIDTH = 76;
@@ -35,6 +43,8 @@ const FavoriteRow = React.forwardRef(function FavoriteRow(
     canMoveDown,
     onSwipeOpen,
     onSwipeClose,
+    drag,
+    isActive,
   }: {
     symbol: string;
     quote: any;
@@ -46,6 +56,8 @@ const FavoriteRow = React.forwardRef(function FavoriteRow(
     canMoveDown: boolean;
     onSwipeOpen: () => void;
     onSwipeClose: () => void;
+    drag?: () => void;
+    isActive?: boolean;
   },
   ref: React.Ref<any>,
 ) {
@@ -71,31 +83,51 @@ const FavoriteRow = React.forwardRef(function FavoriteRow(
   );
 
   return (
-    <Swipeable
-      ref={swipeRef}
-      renderRightActions={renderRightActions}
-      overshootRight={false}
-      friction={2}
-      enabled={!editMode}
-      onSwipeableWillOpen={onSwipeOpen}
-      onSwipeableWillClose={onSwipeClose}
-    >
-      <View style={[styles.rowWrap, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        {editMode ? (
-          <View style={styles.reorderBtns}>
-            <Pressable onPress={onMoveUp} disabled={!canMoveUp} hitSlop={6} style={styles.reorderBtn}>
-              <IconArrowUp color={canMoveUp ? colors.mutedForeground : colors.border} size={16} />
-            </Pressable>
-            <Pressable onPress={onMoveDown} disabled={!canMoveDown} hitSlop={6} style={styles.reorderBtn}>
-              <IconArrowDown color={canMoveDown ? colors.mutedForeground : colors.border} size={16} />
-            </Pressable>
+    <ScaleDecorator>
+      <Swipeable
+        ref={swipeRef}
+        renderRightActions={renderRightActions}
+        overshootRight={false}
+        friction={2}
+        enabled={!editMode}
+        onSwipeableWillOpen={onSwipeOpen}
+        onSwipeableWillClose={onSwipeClose}
+      >
+        <View
+          style={[
+            styles.rowWrap,
+            {
+              backgroundColor: isActive ? `${colors.primary}12` : colors.card,
+              borderBottomColor: colors.border,
+            },
+          ]}
+        >
+          {editMode ? (
+            <View style={styles.reorderSection}>
+              <Pressable
+                onLongPress={drag}
+                delayLongPress={150}
+                hitSlop={6}
+                style={styles.gripBtn}
+              >
+                <IconGrip color={colors.mutedForeground} size={16} />
+              </Pressable>
+              <View style={styles.reorderBtns}>
+                <Pressable onPress={onMoveUp} disabled={!canMoveUp} hitSlop={6} style={styles.reorderBtn}>
+                  <IconArrowUp color={canMoveUp ? colors.mutedForeground : colors.border} size={16} />
+                </Pressable>
+                <Pressable onPress={onMoveDown} disabled={!canMoveDown} hitSlop={6} style={styles.reorderBtn}>
+                  <IconArrowDown color={canMoveDown ? colors.mutedForeground : colors.border} size={16} />
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+          <View style={styles.rowFlex}>
+            <StockRow symbol={symbol} quote={quote} showFavoriteBtn={true} />
           </View>
-        ) : null}
-        <View style={styles.rowFlex}>
-          <StockRow symbol={symbol} quote={quote} showFavoriteBtn={true} />
         </View>
-      </View>
-    </Swipeable>
+      </Swipeable>
+    </ScaleDecorator>
   );
 });
 
@@ -122,6 +154,15 @@ export default function FavoritesScreen() {
       openSwipeKey.current = null;
     }
   }, [isFocused]);
+
+  /* edit moddan çıkarken açık swipe varsa kapat */
+  React.useEffect(() => {
+    if (!editMode && openSwipeKey.current) {
+      const row = swipeRowRefs.current.get(openSwipeKey.current);
+      row?.close?.();
+      openSwipeKey.current = null;
+    }
+  }, [editMode]);
 
   const handleManualRefresh = useCallback(async () => {
     setManualRefreshing(true);
@@ -150,7 +191,54 @@ export default function FavoritesScreen() {
     [favorites.length, reorder],
   );
 
+  const handleDragEnd = useCallback(
+    ({ from, to }: { from: number; to: number }) => {
+      if (from === to) return;
+      if (Platform.OS !== "web") Haptics.selectionAsync();
+      reorder(from, to);
+    },
+    [reorder],
+  );
+
   const topPaddingStyle = { paddingTop: insets.top + 10 };
+
+  const renderItem = useCallback(
+    ({ item, getIndex, drag, isActive }: RenderItemParams<string>) => {
+      const index = getIndex() ?? 0;
+      return (
+      <FavoriteRow
+        ref={(r) => {
+          if (r) swipeRowRefs.current.set(item, r);
+          else swipeRowRefs.current.delete(item);
+        }}
+        symbol={item}
+        quote={quotes[item]}
+        onRemove={() => handleRemove(item)}
+        editMode={editMode}
+        onMoveUp={() => handleMove(index, -1)}
+        onMoveDown={() => handleMove(index, 1)}
+        canMoveUp={index > 0}
+        canMoveDown={index < favorites.length - 1}
+        onSwipeOpen={() => {
+          /* önce açık olanı kapat */
+          if (openSwipeKey.current && openSwipeKey.current !== item) {
+            const prev = swipeRowRefs.current.get(openSwipeKey.current);
+            prev?.close?.();
+          }
+          openSwipeKey.current = item;
+        }}
+        onSwipeClose={() => {
+          if (openSwipeKey.current === item) {
+            openSwipeKey.current = null;
+          }
+        }}
+        drag={drag}
+        isActive={isActive}
+      />
+    );
+    },
+    [editMode, favorites.length, quotes, handleRemove, handleMove],
+  );
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -204,9 +292,12 @@ export default function FavoritesScreen() {
             subtitle="Piyasa veya Arama ekranından yıldıza basarak hisse ekleyin"
           />
         ) : (
-          <FlatList
+          <DraggableFlatList
             data={favorites}
             keyExtractor={(item) => item}
+            renderItem={renderItem}
+            onDragEnd={handleDragEnd}
+            activationDistance={editMode ? 5 : 999}
             refreshControl={
               <RefreshControl
                 refreshing={manualRefreshing}
@@ -214,35 +305,6 @@ export default function FavoritesScreen() {
                 tintColor={colors.primary}
               />
             }
-            renderItem={({ item, index }) => (
-              <FavoriteRow
-                ref={(r) => {
-                  if (r) swipeRowRefs.current.set(item, r);
-                  else swipeRowRefs.current.delete(item);
-                }}
-                symbol={item}
-                quote={quotes[item]}
-                onRemove={() => handleRemove(item)}
-                editMode={editMode}
-                onMoveUp={() => handleMove(index, -1)}
-                onMoveDown={() => handleMove(index, 1)}
-                canMoveUp={index > 0}
-                canMoveDown={index < favorites.length - 1}
-                onSwipeOpen={() => {
-                  /* önce açık olanı kapat */
-                  if (openSwipeKey.current && openSwipeKey.current !== item) {
-                    const prev = swipeRowRefs.current.get(openSwipeKey.current);
-                    prev?.close?.();
-                  }
-                  openSwipeKey.current = item;
-                }}
-                onSwipeClose={() => {
-                  if (openSwipeKey.current === item) {
-                    openSwipeKey.current = null;
-                  }
-                }}
-              />
-            )}
             contentContainerStyle={{ paddingBottom: insets.bottom + 150 }}
             showsVerticalScrollIndicator={false}
           />
@@ -279,7 +341,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   rowFlex: { flex: 1 },
-  reorderBtns: { flexDirection: "column", gap: 6, paddingLeft: 8 },
+  reorderSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingLeft: 8,
+    gap: 2,
+  },
+  gripBtn: { padding: 4 },
+  reorderBtns: { flexDirection: "column", gap: 6 },
   reorderBtn: { padding: 2 },
   swipeDelete: {
     width: DELETE_ACTION_WIDTH,

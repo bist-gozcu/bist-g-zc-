@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -28,13 +28,70 @@ import {
   IconPlus,
   IconX,
 } from "@/components/TabIcon";
+import { useIsFocused } from "@react-navigation/native";
 
 type SortKey = "name" | "price" | "change" | "volume";
 type SortDir = "asc" | "desc";
 
+/* ── swipe silme alanı genişliği ── */
+const DELETE_ACTION_WIDTH = 76;
+
+/* ── swipe-to-delete satır bileşeni ── */
+const MarketRow = React.forwardRef(function MarketRow(
+  {
+    symbol,
+    quote,
+    onRemove,
+    onSwipeOpen,
+    onSwipeClose,
+  }: {
+    symbol: string;
+    quote: any;
+    onRemove: () => void;
+    onSwipeOpen: () => void;
+    onSwipeClose: () => void;
+  },
+  ref: React.Ref<any>,
+) {
+  const colors = useColors();
+  const swipeRef = useRef<Swipeable>(null);
+
+  /* dışarıya close() metodu ver */
+  React.useImperativeHandle(ref, () => ({
+    close: () => swipeRef.current?.close(),
+  }));
+
+  const renderRightActions = () => (
+    <Pressable
+      style={[styles.swipeDelete, { backgroundColor: colors.purple }]}
+      onPress={() => {
+        swipeRef.current?.close();
+        onRemove();
+      }}
+    >
+      <IconTrash color="#fff" size={18} />
+      <Text style={styles.swipeDeleteText}>Sil</Text>
+    </Pressable>
+  );
+
+  return (
+    <Swipeable
+      ref={swipeRef}
+      renderRightActions={renderRightActions}
+      overshootRight={false}
+      friction={2}
+      onSwipeableWillOpen={onSwipeOpen}
+      onSwipeableWillClose={onSwipeClose}
+    >
+      <StockRow symbol={symbol} quote={quote} />
+    </Swipeable>
+  );
+});
+
 export default function MarketScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const { quotes, loading, refresh, lastUpdated, isMarketOpen } = useStocks();
   const { watchlist, addToWatchlist, removeFromWatchlist, reorder } = useWatchlist();
   const [sortKey, setSortKey] = useState<SortKey>("change");
@@ -42,6 +99,21 @@ export default function MarketScreen() {
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [addQuery, setAddQuery] = useState("");
+  const [selectedSector, setSelectedSector] = useState<string | null>(null);
+
+  /* ── swipeable ref yönetimi ── */
+  const openSwipeKey = useRef<string | null>(null);
+  const swipeRowRefs = useRef<Map<string, any>>(new Map());
+
+  /* sekme değiştiğinde açık swipe'ı kapat */
+  React.useEffect(() => {
+    if (isFocused) return;
+    if (openSwipeKey.current) {
+      const row = swipeRowRefs.current.get(openSwipeKey.current);
+      row?.close?.();
+      openSwipeKey.current = null;
+    }
+  }, [isFocused]);
 
   const handleManualRefresh = useCallback(async () => {
     setManualRefreshing(true);
@@ -84,11 +156,20 @@ export default function MarketScreen() {
     removeFromWatchlist(symbol);
   }, [removeFromWatchlist]);
 
+  const SECTORS = Array.from(new Set(UNIQUE_BIST_STOCKS.map((s) => s.sector))).sort();
+
   const availableStocks = UNIQUE_BIST_STOCKS.filter((stock) => {
     if (watchlist.includes(stock.symbol)) return false;
     const q = addQuery.trim().toUpperCase();
-    return !q || stock.symbol.includes(q) || stock.name.toUpperCase().includes(q);
+    const matchQuery = !q || stock.symbol.includes(q) || stock.name.toUpperCase().includes(q);
+    const matchSector = selectedSector == null || stock.sector === selectedSector;
+    return matchQuery && matchSector;
   }).slice(0, 30);
+
+  const handleSector = useCallback((sector: string) => {
+    if (Platform.OS !== "web") Haptics.selectionAsync();
+    setSelectedSector((prev) => (prev === sector ? null : sector));
+  }, []);
 
   const SortBtn = ({ label, k }: { label: string; k: SortKey }) => (
     <Pressable onPress={() => handleSort(k)} style={styles.sortBtn}>
@@ -103,22 +184,9 @@ export default function MarketScreen() {
     </Pressable>
   );
 
-  const renderRightActions = (symbol: string, ref: Swipeable | null) => (
-    <Pressable
-      style={[styles.swipeDelete, { backgroundColor: colors.down }]}
-      onPress={() => {
-        ref?.close();
-        handleRemove(symbol);
-      }}
-    >
-      <IconTrash color="#fff" size={18} />
-      <Text style={styles.swipeDeleteText}>Sil</Text>
-    </Pressable>
-  );
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }, topPaddingStyle]}>
-      {/* Header — düzenle butonu kaldırıldı */}
+      {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <View>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>BIST Hisseleri</Text>
@@ -148,7 +216,7 @@ export default function MarketScreen() {
             </View>
           )}
           <Pressable
-            onPress={() => { setAddQuery(""); setShowAddModal(true); }}
+            onPress={() => { setAddQuery(""); setSelectedSector(null); setShowAddModal(true); }}
             hitSlop={10}
             style={[styles.addBtn, { backgroundColor: colors.primary }]}
           >
@@ -170,7 +238,7 @@ export default function MarketScreen() {
         <View style={{ width: 28 }} />
       </View>
 
-      {/* Hisse ekleme modalı */}
+      {/* Hisse ekleme modalı — sector filtreli */}
       <Modal visible={showAddModal} transparent animationType="slide" onRequestClose={() => setShowAddModal(false)}>
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView behavior="padding" style={styles.modalKeyboard}>
@@ -178,7 +246,7 @@ export default function MarketScreen() {
               <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
               <View style={styles.modalHeader}>
                 <View>
-                  <Text style={[styles.modalTitle, { color: colors.foreground }]}>Piyasa listesine hisse ekle</Text>
+                  <Text style={[styles.modalTitle, { color: colors.foreground }]}>Listeye hisse ekle</Text>
                   <Text style={[styles.modalSub, { color: colors.mutedForeground }]}>{watchlist.length} hisse listede</Text>
                 </View>
                 <Pressable onPress={() => setShowAddModal(false)} hitSlop={10} style={[styles.modalCloseBtn, { backgroundColor: colors.secondary }]}>
@@ -194,6 +262,39 @@ export default function MarketScreen() {
                 style={[styles.addInput, { color: colors.foreground, backgroundColor: colors.input, borderColor: colors.border }]}
                 returnKeyType="search"
               />
+              {/* Sector chips */}
+              <FlatList
+                data={SECTORS}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyExtractor={(s) => s}
+                style={styles.sectorRow}
+                contentContainerStyle={{ paddingHorizontal: 0, gap: 6, paddingVertical: 6 }}
+                renderItem={({ item }) => {
+                  const active = selectedSector === item;
+                  return (
+                    <Pressable
+                      style={[styles.sectorChip, { backgroundColor: active ? colors.primary : colors.background, borderColor: active ? colors.primary : colors.border }]}
+                      onPress={() => handleSector(item)}
+                    >
+                      <Text style={[styles.sectorText, { color: active ? "#fff" : colors.mutedForeground }]}>
+                        {item}
+                      </Text>
+                    </Pressable>
+                  );
+                }}
+              />
+              {/* Count */}
+              <View style={[styles.countBar, { borderBottomColor: colors.border }]}>
+                <Text style={[styles.countText, { color: colors.mutedForeground }]}>
+                  {availableStocks.length} hisse{selectedSector ? ` · ${selectedSector}` : ""}{addQuery.length > 0 ? ` · "${addQuery}"` : ""}
+                </Text>
+                {(addQuery.length > 0 || selectedSector) && (
+                  <Pressable onPress={() => { setAddQuery(""); setSelectedSector(null); }} hitSlop={8}>
+                    <Text style={[styles.clearAllText, { color: colors.primary }]}>Temizle</Text>
+                  </Pressable>
+                )}
+              </View>
               <FlatList
                 data={availableStocks}
                 keyExtractor={(item) => item.symbol}
@@ -227,18 +328,30 @@ export default function MarketScreen() {
         <FlatList
           data={listData}
           keyExtractor={(item) => item}
-          renderItem={({ item }) => {
-            let swipeRef: Swipeable | null = null;
-            return (
-              <Swipeable                ref={(r) => { swipeRef = r; }}
-                renderRightActions={() => renderRightActions(item, swipeRef)}
-                overshootRight={false}
-                friction={2}
-              >
-                <StockRow symbol={item} quote={quotes[item]} />
-              </Swipeable>
-            );
-          }}
+          renderItem={({ item }) => (
+            <MarketRow
+              ref={(r) => {
+                if (r) swipeRowRefs.current.set(item, r);
+                else swipeRowRefs.current.delete(item);
+              }}
+              symbol={item}
+              quote={quotes[item]}
+              onRemove={() => handleRemove(item)}
+              onSwipeOpen={() => {
+                /* önce açık olanı kapat */
+                if (openSwipeKey.current && openSwipeKey.current !== item) {
+                  const prev = swipeRowRefs.current.get(openSwipeKey.current);
+                  prev?.close?.();
+                }
+                openSwipeKey.current = item;
+              }}
+              onSwipeClose={() => {
+                if (openSwipeKey.current === item) {
+                  openSwipeKey.current = null;
+                }
+              }}
+            />
+          )}
           refreshControl={
             <RefreshControl
               refreshing={manualRefreshing}
@@ -301,7 +414,13 @@ const styles = StyleSheet.create({
   modalSub: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 3 },
   modalCloseBtn: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
   addInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 14, fontFamily: "Inter_400Regular", marginBottom: 8 },
-  addResults: { maxHeight: 380 },
+  sectorRow: { maxHeight: 48 },
+  sectorChip: { minHeight: 32, paddingHorizontal: 10, alignItems: "center", justifyContent: "center", borderRadius: 16, borderWidth: 1 },
+  sectorText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  countBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth },
+  countText: { fontSize: 11, fontFamily: "Inter_400Regular" },
+  clearAllText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  addResults: { maxHeight: 320 },
   addResultRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth },
   addResultCopy: { flex: 1, marginRight: 10 },
   addResultSymbol: { fontSize: 14, fontFamily: "Inter_700Bold" },
@@ -310,7 +429,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   loadingText: { fontSize: 13, fontFamily: "Inter_400Regular" },
   swipeDelete: {
-    width: 76,
+    width: DELETE_ACTION_WIDTH,
     alignItems: "center",
     justifyContent: "center",
     gap: 2,
