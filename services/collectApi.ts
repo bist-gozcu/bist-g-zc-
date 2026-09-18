@@ -10,6 +10,10 @@ import {
   parseMarketTimestamp,
   fetchBatchQuotes,
 } from "@/utils/yahooFinance";
+import {
+  fetchTwelveDataQuotes,
+  isTwelveDataEnabled,
+} from "@/utils/twelveData";
 
 export type Hisse = {
   sembol: string;
@@ -145,6 +149,45 @@ const normalizeQuote = (quote: QuoteRecord): Hisse => {
 const validQuotes = (quotes: Hisse[]): Hisse[] =>
   quotes.filter((quote) => quote.sembol.length > 0 && quote.fiyat > 0);
 
+// BIST günlük fiyat marjı ±%10'dur. Küçük toleransla %11'i aşan bir "günlük
+// değişim", genellikle bir önceki seans kapanışının boş gelmesinden kaynaklanan
+// hatalı veridir; bu satırları alternatif kaynaktan onarmaya çalışıyoruz.
+const BIST_DAILY_LIMIT_PCT = 11;
+
+const isSuspectQuote = (quote: Hisse): boolean =>
+  !Number.isFinite(quote.degisimYuzde) ||
+  Math.abs(quote.degisimYuzde) > BIST_DAILY_LIMIT_PCT;
+
+/**
+ * Yahoo verisinde mantıksız (±%11 üstü) günlük değişim gösteren satırları,
+ * varsa alternatif ücretsiz kaynaktan (Twelve Data) temiz veriyle onarır.
+ * Anahtar tanımlı değilse quote'lar aynen döner.
+ */
+async function repairSuspectQuotes(quotes: Hisse[]): Promise<Hisse[]> {
+  if (!isTwelveDataEnabled()) return quotes;
+  const suspects = quotes.filter(isSuspectQuote).map((q) => q.sembol);
+  if (suspects.length === 0) return quotes;
+
+  try {
+    const altMap = await fetchTwelveDataQuotes(suspects);
+    if (altMap.size === 0) return quotes;
+    return quotes.map((quote) => {
+      if (!isSuspectQuote(quote)) return quote;
+      const alt = altMap.get(quote.sembol);
+      if (!alt) return quote;
+      return {
+        ...quote,
+        fiyat: alt.fiyat > 0 ? alt.fiyat : quote.fiyat,
+        degisimYuzde: alt.degisimYuzde,
+        veriKaynagi: "Twelve Data (BIST)",
+      };
+    });
+  } catch (e) {
+    logger.warn("collectApi", "Alternatif kaynak onarımı başarısız", e);
+    return quotes;
+  }
+}
+
 export const getBist100 = async (): Promise<Hisse[]> => {
   const stockSymbols = UNIQUE_BIST_STOCKS.map((stock) => stock.symbol);
   const symbols = stockSymbols.join(",");
@@ -162,15 +205,17 @@ export const getBist100 = async (): Promise<Hisse[]> => {
       const quotes = validQuotes(
         (payload.quoteResponse?.result ?? []).map(normalizeQuote),
       );
-      if (quotes.length > 0) return quotes;
+      if (quotes.length > 0) return repairSuspectQuotes(quotes);
     }
   } catch (e) {
     logger.warn("collectApi", "Proxy quote istek hatası, Yahoo fallback deneniyor", e);
   }
 
   const fallbackQuotes = await fetchBatchQuotes(stockSymbols);
-  return validQuotes(
-    fallbackQuotes.map((quote) => normalizeQuote(quote as QuoteRecord)),
+  return repairSuspectQuotes(
+    validQuotes(
+      fallbackQuotes.map((quote) => normalizeQuote(quote as QuoteRecord)),
+    ),
   );
 };
 

@@ -206,6 +206,121 @@ type YahooChartQuote = {
 const asNumber = (value: unknown): number =>
   typeof value === "number" && Number.isFinite(value) ? value : 0;
 
+/**
+ * BIST'te günlük fiyat marjı ±%10'dur. Tek seansta bunu aşan bir "günlük
+ * değişim", genellikle Yahoo günlük grafiğinde bir önceki seansın kapanışının
+ * boş (null) gelmesinden ve kodun daha eski bir güne "atlamasından" kaynaklanır.
+ * Bu eşiği küçük bir toleransla %11 kabul ediyoruz.
+ */
+const BIST_DAILY_LIMIT_PCT = 11;
+
+/**
+ * Bir Yahoo grafik yanıtındaki timestamp+close dizilerinden gün bazlı kapanışları
+ * (YYYY-MM-DD -> o günün son geçerli kapanışı) çıkarır. 1s/30d gibi intraday
+ * aralıklarda bile doğru günlük kapanışı verir.
+ */
+function dailyClosesFromChart(json: YahooChartQuote): Map<string, number> {
+  const result = json.chart?.result?.[0];
+  const timestamps = result?.timestamp ?? [];
+  const closes = result?.indicators?.quote?.[0]?.close ?? [];
+  const byDay = new Map<string, number>();
+  for (let i = 0; i < timestamps.length; i += 1) {
+    const close = closes[i];
+    if (typeof close === "number" && close > 0) {
+      const day = new Date(timestamps[i] * 1000).toISOString().slice(0, 10);
+      byDay.set(day, close); // aynı güne ait son geçerli değer o günün kapanışıdır
+    }
+  }
+  return byDay;
+}
+
+/**
+ * Günlük grafikte bir önceki seansın kapanışı boş geldiğinde, gerçek önceki
+ * kapanışı 1 saatlik veriden kurtarır. Böylece "dünkü kapanış yerine 2-3 gün
+ * önceki kapanışa göre yüzde hesaplama" hatası (ör. YKBNK +%12.83) düzelir.
+ */
+async function recoverPreviousCloseHourly(
+  symbol: string,
+  timeoutMs = QUOTE_TIMEOUT_MS,
+): Promise<number> {
+  try {
+    const yahooSymbol = `${symbol.replace(/\.IS$/i, "").toUpperCase()}.IS`;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1h&range=1mo`;
+    const res = await fetchWithTimeout(url, { headers: YF_HEADERS }, timeoutMs);
+    if (!res.ok) return 0;
+    const json = (await res.json()) as YahooChartQuote;
+    const byDay = dailyClosesFromChart(json);
+    const days = [...byDay.keys()].sort();
+    if (days.length < 2) return 0;
+    // En güncel gün bugünkü seans; bir önceki gün gerçek "önceki kapanış"tır.
+    return byDay.get(days[days.length - 2]) ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Fiyat ve günlük kapanış dizisinden güvenilir "önceki kapanış" ve "yüzde
+ * değişim" üretir. Boşluk (null gün) nedeniyle mantıksız (>%11) bir değişim
+ * çıkarsa, veriyi 1 saatlik grafikten kurtarmayı dener.
+ */
+async function resolveDailyChange(
+  symbol: string,
+  price: number,
+  meta: Record<string, unknown>,
+  closes: Array<number | null>,
+  validIndexes: number[],
+  timeoutMs: number,
+): Promise<{ previousClose: number; changePercent: number }> {
+  const lastIndex = validIndexes.at(-1);
+  const secondLastIndex =
+    validIndexes.length >= 2 ? validIndexes.at(-2)! : lastIndex ?? 0;
+
+  // 1) Yahoo meta bir önceki kapanışı doğrudan verirse en güveniliri odur.
+  const metaPrev =
+    asNumber(meta.previousClose) ||
+    asNumber(meta.regularMarketPreviousClose) ||
+    asNumber(meta.chartPreviousClose);
+
+  // 2) Grafik dizisindeki sondan bir önceki geçerli kapanış.
+  const arrayPrev = asNumber(closes[secondLastIndex]);
+
+  const pct = (prev: number) =>
+    prev > 0 ? ((price - prev) / prev) * 100 : 0;
+
+  // Boşluk tespiti: son geçerli kapanışla bir önceki geçerli kapanış arasında
+  // atlanmış (null) bir gün var mı?
+  const hasGap =
+    lastIndex != null && secondLastIndex != null
+      ? lastIndex - secondLastIndex > 1
+      : false;
+
+  const arrayPct = pct(arrayPrev);
+  const arrayImplausible = Math.abs(arrayPct) > BIST_DAILY_LIMIT_PCT;
+
+  // Grafik değeri makul ve boşluk yoksa doğrudan kullan.
+  if (arrayPrev > 0 && !arrayImplausible && !hasGap) {
+    return { previousClose: arrayPrev, changePercent: arrayPct };
+  }
+
+  // Meta değeri makul bir değişim veriyorsa onu tercih et.
+  if (metaPrev > 0 && Math.abs(pct(metaPrev)) <= BIST_DAILY_LIMIT_PCT) {
+    return { previousClose: metaPrev, changePercent: pct(metaPrev) };
+  }
+
+  // Boşluk ya da mantıksız değer varsa gerçek önceki kapanışı 1s veriden kurtar.
+  if (hasGap || arrayImplausible) {
+    const recovered = await recoverPreviousCloseHourly(symbol, timeoutMs);
+    if (recovered > 0) {
+      return { previousClose: recovered, changePercent: pct(recovered) };
+    }
+  }
+
+  // Son çare: elde makul olan neyse onu ver.
+  if (metaPrev > 0) return { previousClose: metaPrev, changePercent: pct(metaPrev) };
+  return { previousClose: arrayPrev, changePercent: arrayPct };
+}
+
 async function fetchQuoteFromChart(
   symbol: string,
   timeoutMs = QUOTE_TIMEOUT_MS,
@@ -234,13 +349,19 @@ async function fetchQuoteFromChart(
     const lastIndex = validIndexes.at(-1);
     if (lastIndex == null) return null;
 
-    // Günlük yüzde değişim: chartPreviousClose range başlangıcındaki
-    // kapanıştır (3mo=3 ay önce), dünkü kapanış DEĞİLDİR.
-    // Bu yüzden closes dizisindeki sondan bir önceki geçerli kapanışı kullan.
-    const secondLastIndex = validIndexes.length >= 2 ? validIndexes.at(-2)! : lastIndex;
+    // Günlük yüzde değişim: bir önceki SEANS kapanışına göre hesaplanır.
+    // Yahoo günlük grafiğinde bir önceki gün null gelebildiğinden, gap/mantıksız
+    // değer durumunda resolveDailyChange gerçek kapanışı 1s veriden kurtarır.
     const price =
       asNumber(meta.regularMarketPrice) || asNumber(closes[lastIndex]);
-    const previousClose = asNumber(closes[secondLastIndex]);
+    const { previousClose, changePercent } = await resolveDailyChange(
+      symbol,
+      price,
+      meta,
+      closes,
+      validIndexes,
+      timeoutMs,
+    );
     const change = price - previousClose;
     const averageVolume = volumes
       .map(asNumber)
@@ -251,9 +372,7 @@ async function fetchQuoteFromChart(
       symbol: symbol.replace(".IS", "").toUpperCase(),
       shortName: String(meta.shortName ?? meta.longName ?? symbol),
       regularMarketPrice: price,
-      regularMarketChangePercent: previousClose
-        ? (change / previousClose) * 100
-        : 0,
+      regularMarketChangePercent: changePercent,
       regularMarketChange: change,
       regularMarketVolume:
         asNumber(meta.regularMarketVolume) || asNumber(volumes[lastIndex]),
@@ -485,14 +604,19 @@ async function fetchMacroQuotesDirect(symbols: string[]): Promise<QuoteData[]> {
             .filter((index) => index >= 0);
           const lastIndex = validIndexes.at(-1);
           if (lastIndex == null) continue;
-          // Günlük yüzde değişim: chartPreviousClose range başlangıcındaki
-          // kapanıştır (5d=5 gün önce), dünkü kapanış DEĞİLDİR.
-          // Bu yüzden closes dizisindeki sondan bir önceki geçerli kapanışı kullan.
-          const secondLastIndex = validIndexes.length >= 2 ? validIndexes.at(-2)! : lastIndex;
+          // Günlük yüzde değişim: bir önceki SEANS kapanışına göre; null gün
+          // boşluğunda resolveDailyChange 1s veriden kurtarır.
           const price =
             asNumber(meta.regularMarketPrice) || asNumber(closes[lastIndex]);
-          const previousClose = asNumber(closes[secondLastIndex]);
           if (price <= 0) continue;
+          const { previousClose, changePercent } = await resolveDailyChange(
+            symbol,
+            price,
+            meta,
+            closes,
+            validIndexes,
+            12_000,
+          );
           const volumeValues = (quote.volume ?? [])
             .map(asNumber)
             .filter((volume) => volume > 0);
@@ -507,9 +631,7 @@ async function fetchMacroQuotesDirect(symbols: string[]): Promise<QuoteData[]> {
             symbol: symbol.replace(/\.IS$/i, "").toUpperCase(),
             shortName: String(meta.shortName ?? meta.longName ?? symbol),
             regularMarketPrice: price,
-            regularMarketChangePercent: previousClose
-              ? (change / previousClose) * 100
-              : 0,
+            regularMarketChangePercent: changePercent,
             regularMarketChange: change,
             regularMarketVolume: asNumber(meta.regularMarketVolume),
             regularMarketPreviousClose: previousClose,
