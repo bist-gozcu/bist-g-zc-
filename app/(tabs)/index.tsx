@@ -158,13 +158,31 @@ export default function MarketScreen() {
 
   const SECTORS = Array.from(new Set(UNIQUE_BIST_STOCKS.map((s) => s.sector))).sort();
 
+  // Türkçe karakterleri sadeleştirip küçük harfe indirger; böylece "ı/i",
+  // "ş/s", "ç/c" gibi farklar aramayı bozmaz ("Bım" → "bim", "Türk" → "turk").
+  const normalizeTr = (value: string): string =>
+    value
+      .replace(/İ/g, "i")
+      .replace(/I/g, "i")
+      .replace(/ı/g, "i")
+      .toLowerCase()
+      .replace(/ş/g, "s")
+      .replace(/ğ/g, "g")
+      .replace(/ü/g, "u")
+      .replace(/ö/g, "o")
+      .replace(/ç/g, "c")
+      .trim();
+
   const availableStocks = UNIQUE_BIST_STOCKS.filter((stock) => {
     if (watchlist.includes(stock.symbol)) return false;
-    const q = addQuery.trim().toUpperCase();
-    const matchQuery = !q || stock.symbol.includes(q) || stock.name.toUpperCase().includes(q);
+    const q = normalizeTr(addQuery);
+    const matchQuery =
+      !q ||
+      normalizeTr(stock.symbol).includes(q) ||
+      normalizeTr(stock.name).includes(q);
     const matchSector = selectedSector == null || stock.sector === selectedSector;
     return matchQuery && matchSector;
-  }).slice(0, 30);
+  }).slice(0, 60);
 
   const handleSector = useCallback((sector: string) => {
     if (Platform.OS !== "web") Haptics.selectionAsync();
@@ -241,9 +259,8 @@ export default function MarketScreen() {
       {/* Hisse ekleme modalı — sector filtreli */}
       <Modal visible={showAddModal} transparent animationType="slide" onRequestClose={() => setShowAddModal(false)}>
         <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView behavior="padding" style={styles.modalKeyboard}>
-            <View style={[styles.addModal, { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: insets.bottom + 14 }]}>
-              <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalKeyboard}>
+            <View style={[styles.addModal, { backgroundColor: colors.card, borderColor: colors.border, paddingTop: insets.top + 8, paddingBottom: insets.bottom + 8 }]}>
               <View style={styles.modalHeader}>
                 <View>
                   <Text style={[styles.modalTitle, { color: colors.foreground }]}>Listeye hisse ekle</Text>
@@ -405,9 +422,9 @@ const styles = StyleSheet.create({
   sortBtn: { flexDirection: "row", alignItems: "center", gap: 2, paddingHorizontal: 4 },
   sortLabel: { fontSize: 11, fontFamily: "Inter_500Medium" },
   spacer: { flex: 1 },
-  modalOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.58)" },
-  modalKeyboard: { width: "100%", justifyContent: "flex-end" },
-  addModal: { maxHeight: "86%", borderTopLeftRadius: 22, borderTopRightRadius: 22, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, paddingTop: 10 },
+  modalOverlay: { flex: 1, justifyContent: "flex-start", backgroundColor: "rgba(0,0,0,0.58)" },
+  modalKeyboard: { flex: 1, width: "100%" },
+  addModal: { flex: 1, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16 },
   modalHandle: { width: 38, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 14 },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 },
   modalTitle: { fontSize: 17, fontFamily: "Inter_700Bold" },
@@ -420,7 +437,7 @@ const styles = StyleSheet.create({
   countBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth },
   countText: { fontSize: 11, fontFamily: "Inter_400Regular" },
   clearAllText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
-  addResults: { maxHeight: 320 },
+  addResults: { flex: 1 },
   addResultRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth },
   addResultCopy: { flex: 1, marginRight: 10 },
   addResultSymbol: { fontSize: 14, fontFamily: "Inter_700Bold" },

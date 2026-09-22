@@ -193,9 +193,14 @@ export const getBist100 = async (): Promise<Hisse[]> => {
   const symbols = stockSymbols.join(",");
 
   try {
+    // Proxy ölü/erişilemez olduğunda her yenilemede tam ağ zaman aşımını
+    // beklemeyip hızlıca Yahoo fallback'e geçmek için kısa süre koyuyoruz.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3500);
     const response = await fetch(
       `${getApiBase()}/bist/quotes?symbols=${encodeURIComponent(symbols)}`,
-    );
+      { signal: controller.signal },
+    ).finally(() => clearTimeout(timeout));
     const contentType = response.headers.get("content-type") ?? "";
 
     // Expo web dev sunucusu /api için HTML fallback döndürebilir. HTML’i
